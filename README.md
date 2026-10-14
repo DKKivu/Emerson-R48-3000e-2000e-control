@@ -25,3 +25,18 @@ python -m pip install -r requirements.txt
 ```bash
 python run.py
 ```
+
+## Build
+
+# 1. Install dependencies (including PyInstaller)
+``` bash
+python -m pip install -r requirements-dev.
+
+```
+
+# 2. Build the one-file windowed EXE
+``` bash
+python build_exe.py --clean
+```
+# Output:
+#   dist/R48Controller.exe
