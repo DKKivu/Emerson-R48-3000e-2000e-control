@@ -1,0 +1,3 @@
+pyserial==3.5
+# Not needed to run the GUI; listed only if you want to script around it.
+pytest 
