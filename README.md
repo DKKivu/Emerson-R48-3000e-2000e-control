@@ -10,8 +10,8 @@ Protocol references:
 - Live telemetry: voltage, current, power, current limit, temperature, input voltage.
 - Set voltage / current setpoints:
   - Online (temporary): takes effect immediately but not written to non-volatile memory.
-  - Permanent (offline / written to device memory): uses the device "permanent" command to store the value.
-  - Note: when configuring a permanent/offline value, you should first set the online value, verify the behavior, and only then write the permanent value. The value is stored in the rectifier memory.
+  - Permanent (offline / written to device memory): stores the value in the rectifier memory.
+  - Important: when configuring a permanent/offline value, set the online value first, verify the result, and then write the permanent value. The permanent value is written to memory.
 - Online setpoints are re-sent every 10 s while Hold is ticked.
 - Fan control: discrete modes only — Auto or Full speed.
 - Locate LED flash.
@@ -154,12 +154,10 @@ r48/
 This project is open-sourced under the MIT License. See `LICENSE` for the full text.
 
 ## References and attribution
-This implementation was developed with reference to the following projects and resources. Please check those repositories for their own licenses and attributions before copying/redistributing code from them directly.
+This implementation was developed with reference to the following public projects and resources. Please check those repositories for their own licenses and attribution requirements before copying or redistributing code from them directly.
 
 - PurpleAlien/R48_Rectifier — https://github.com/PurpleAlien/R48_Rectifier
 - anikrooz/Emerson-Vertiv-R48 — https://github.com/anikrooz/Emerson-Vertiv-R48
-
-If you prefer a different open-source license (Apache-2.0, GPLv3, etc.), tell me and I can replace the LICENSE file and update the README accordingly.
 
 ## Try asking
 - "How do I target multiple PSUs with different addresses?"
