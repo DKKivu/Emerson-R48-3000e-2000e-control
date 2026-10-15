@@ -101,6 +101,18 @@ class R48Application(tk.Tk):
             frame, textvariable=self.port, values=list_serial_ports(), width=12
         )
         self.port_combo.grid(row=0, column=1, padx=4)
+
+        # Populate and pick a sensible default immediately so the UI shows a
+        # usable port without requiring the user to press Refresh.
+        try:
+            ports = list_serial_ports()
+            self.port_combo["values"] = ports
+            if not initial_port and ports:
+                self.port.set(ports[0])
+        except Exception:
+            # Be forgiving; the Refresh button still allows re-querying.
+            pass
+
         ttk.Button(frame, text="Refresh", command=self._refresh_ports).grid(
             row=0, column=2, padx=4
         )
@@ -672,7 +684,7 @@ class R48Application(tk.Tk):
             self.log.configure(state="normal")
             self.log.insert("end", f"{time.strftime('%H:%M:%S')} {message}\n")
             self.log.see("end")
-            lines = int(self.log.index("end-1c").split(".")[0])
+            lines = int(self.log.index("end-1c").split("." )[0])
             if lines > self.app_config.max_log_lines:
                 keep = self.app_config.max_log_lines
                 self.log.delete("1.0", f"{lines - keep}.0")
