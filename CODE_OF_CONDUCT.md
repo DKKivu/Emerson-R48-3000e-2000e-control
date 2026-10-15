@@ -1,5 +1,3 @@
-
-8) .gitignore
 ```gitignore
 # Bytecode
 __pycache__/
