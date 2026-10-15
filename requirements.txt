@@ -2,3 +2,4 @@ pyserial
 # Not needed to run the GUI; listed only if you want to script around it.
 pytest
 pyinstaller
+pyyaml
