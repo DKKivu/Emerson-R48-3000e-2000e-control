@@ -10,6 +10,8 @@ import queue
 import threading
 from abc import ABC, abstractmethod
 from typing import Iterator, Optional
+import sys
+import logging
 
 from .exceptions import TransportError
 from .models import CANFrame
@@ -187,6 +189,39 @@ class WaveshareSerialCAN(CANTransport):
 
 
 def list_serial_ports() -> list:
-    if list_ports is None:
-        return []
-    return [port.device for port in list_ports.comports()]
+    """Return a list of available serial port names.
+
+    This function attempts to import and call pyserial's list_ports at
+    runtime so the package can be installed or unavailable without
+    causing the whole application to fail to import. If pyserial isn't
+    installed we return a sentinel entry to make it obvious in the UI;
+    the Connect action will still raise a clear error prompting the
+    user to install pyserial.
+    """
+    # First try the already-imported name (module-level variable).
+    global list_ports
+    try:
+        if list_ports is None:
+            # try importing lazily in case the environment changed
+            from serial.tools import list_ports as _list_ports  # type: ignore
+            list_ports = _list_ports
+    except Exception:
+        logging.debug("pyserial not available (list_ports import failed)")
+        return ["(pyserial missing)"]
+
+    try:
+        ports = [port.device for port in list_ports.comports()]
+    except Exception:
+        logging.exception("Error enumerating serial ports")
+        ports = []
+
+    # On some systems `COM1` can exist but not be reported by list_ports; do
+    # not invent ports, but if no ports were found on Windows include a
+    # common default so users can try it.
+    if not ports and sys.platform.startswith("win"):
+        # Only include COM1 if it seems to exist: attempting to open it would
+        # block or raise, so we simply include it as a hint (connect will
+        # report a clear error if it can't be opened).
+        ports = ["COM1"]
+
+    return ports
