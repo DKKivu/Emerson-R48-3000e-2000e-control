@@ -193,11 +193,6 @@ Proposed dev commands (example)
 
 ---
 
-If you want, I can:
-- Commit this README.md to the repository for you.
-- Add a small diagnostics panel in the GUI that displays `r48._debug_import_info()` and the `list_ports` result.
-- Add a minimal GitHub Actions workflow (lint + pytest) and push it as a PR.
-
 Which of the follow-ups would you like me to do next?
 - "Commit README" — I'll push the README.md file.
 - "Add diagnostics panel" — I will implement a small GUI diagnostics tab.
