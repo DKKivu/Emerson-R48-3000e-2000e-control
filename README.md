@@ -192,8 +192,3 @@ Proposed dev commands (example)
 - MIT (or whatever license you actually have). Include a `LICENSE` file.  
 
 ---
-
-Which of the follow-ups would you like me to do next?
-- "Commit README" — I'll push the README.md file.
-- "Add diagnostics panel" — I will implement a small GUI diagnostics tab.
-- "Add CI" — I'll create a basic GitHub Actions workflow for lint + tests.
