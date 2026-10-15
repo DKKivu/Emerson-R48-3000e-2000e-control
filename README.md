@@ -150,6 +150,17 @@ r48/
 - The transport layer emits event messages that the GUI drains on the Tk main loop.
 - R48 protocol message building and decoding are kept in one place for easier debugging and maintenance.
 
+## License
+This project is open-sourced under the MIT License. See `LICENSE` for the full text.
+
+## References and attribution
+This implementation was developed with reference to the following projects and resources. Please check those repositories for their own licenses and attributions before copying/redistributing code from them directly.
+
+- PurpleAlien/R48_Rectifier — https://github.com/PurpleAlien/R48_Rectifier
+- anikrooz/Emerson-Vertiv-R48 — https://github.com/anikrooz/Emerson-Vertiv-R48
+
+If you prefer a different open-source license (Apache-2.0, GPLv3, etc.), tell me and I can replace the LICENSE file and update the README accordingly.
+
 ## Try asking
 - "How do I target multiple PSUs with different addresses?"
 - "Where is the fan control bit defined in the protocol?"
