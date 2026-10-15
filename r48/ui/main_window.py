@@ -11,13 +11,14 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import Optional
 
-from ..config import AppConfig
+from ..config import AppConfig, CONFIG
 from ..exceptions import ValidationError
 from ..models import CANFrame, TelemetryValue
 from ..protocol import R48Protocol
 from ..transport import WaveshareSerialCAN, list_serial_ports
 from ..controller import R48Controller
 from .dialogs import RawFrameDialog
+from ..settings import load_user_settings, save_user_settings
 
 
 class R48Application(tk.Tk):
@@ -44,7 +45,8 @@ class R48Application(tk.Tk):
     def __init__(self, config: Optional[AppConfig] = None) -> None:
         super().__init__()
 
-        self.app_config = config or AppConfig()
+        # Use YAML-backed config if available
+        self.app_config = config or CONFIG
         self.controller: Optional[R48Controller] = None
         self._polling = False
         self._closing = False
@@ -61,7 +63,12 @@ class R48Application(tk.Tk):
         self.geometry(f"{self.app_config.width}x{self.app_config.height}")
         self.minsize(980, 780)
 
-        self._build_ui()
+        # load user settings
+        user = load_user_settings()
+
+        self._user_settings = user
+
+        self._build_ui(user=user)
 
         self.after(self.app_config.gui_interval_ms, self._process_events)
         self.after(self.app_config.poll_interval_ms, self._poll_telemetry)
@@ -74,21 +81,22 @@ class R48Application(tk.Tk):
     # UI construction
     # --------------------------------------------------------
 
-    def _build_ui(self) -> None:
+    def _build_ui(self, user: dict) -> None:
         root = ttk.Frame(self, padding=12)
         root.pack(fill="both", expand=True)
 
-        self._build_connection_panel(root)
+        self._build_connection_panel(root, user=user)
         self._build_telemetry_panel(root)
         self._build_control_panel(root)
         self._build_tabs(root)
 
-    def _build_connection_panel(self, root: ttk.Frame) -> None:
+    def _build_connection_panel(self, root: ttk.Frame, user: dict) -> None:
         frame = ttk.LabelFrame(root, text="Adapter connection", padding=8)
         frame.pack(fill="x")
 
         ttk.Label(frame, text="COM port").grid(row=0, column=0, sticky="w")
-        self.port = tk.StringVar(value=self.app_config.serial_port)
+        initial_port = user.get("last_port") or self.app_config.serial_port or ""
+        self.port = tk.StringVar(value=initial_port)
         self.port_combo = ttk.Combobox(
             frame, textvariable=self.port, values=list_serial_ports(), width=12
         )
@@ -100,7 +108,8 @@ class R48Application(tk.Tk):
         ttk.Label(frame, text="USB baud").grid(row=0, column=3, padx=(12, 0))
         self.baud = tk.StringVar(value=str(self.app_config.serial_baud))
         ttk.Combobox(
-            frame, textvariable=self.baud,
+            frame,
+            textvariable=self.baud,
             values=("2000000", "1000000", "921600", "460800", "115200"),
             width=12,
         ).grid(row=0, column=4, padx=4)
@@ -108,10 +117,9 @@ class R48Application(tk.Tk):
         ttk.Label(frame, text="CAN bitrate").grid(row=0, column=5, padx=(12, 0))
         self.can_bitrate = tk.StringVar(value=str(self.app_config.can_bitrate))
         ttk.Combobox(
-            frame, textvariable=self.can_bitrate,
-            values=("1000000", "800000", "500000", "400000", "250000",
-                    "200000", "125000", "100000", "50000", "20000",
-                    "10000", "5000"),
+            frame,
+            textvariable=self.can_bitrate,
+            values=("1000000", "800000", "500000", "400000", "250000", "200000", "125000", "100000", "50000", "20000", "10000", "5000"),
             width=10,
         ).grid(row=0, column=6, padx=4)
 
@@ -125,10 +133,20 @@ class R48Application(tk.Tk):
         ttk.Label(frame, text="Target PSU address").grid(
             row=1, column=0, sticky="w", pady=(8, 0)
         )
-        self.target_address = tk.StringVar(value="Default (broadcast)")
+
+        # initial target from user settings
+        last_target = user.get("last_target")
+        if last_target is None:
+            target_initial = "Default (broadcast)"
+        else:
+            try:
+                target_initial = f"0x{int(last_target):02X}"
+            except Exception:
+                target_initial = "Default (broadcast)"
+
+        self.target_address = tk.StringVar(value=target_initial)
         self.addr_combo = ttk.Combobox(
-            frame, textvariable=self.target_address,
-            values=list(self.ADDR_PRESETS), width=22,
+            frame, textvariable=self.target_address, values=list(self.ADDR_PRESETS), width=22
         )
         self.addr_combo.grid(row=1, column=1, columnspan=2, padx=4, pady=(8, 0))
         self.addr_combo.bind("<<ComboboxSelected>>", self._on_address_changed)
@@ -136,8 +154,7 @@ class R48Application(tk.Tk):
         self.addr_combo.bind("<FocusOut>", self._on_address_changed)
 
         self.discovered_label = tk.StringVar(value="Discovered PSUs: (none yet)")
-        ttk.Label(frame, textvariable=self.discovered_label,
-                  foreground="#555").grid(
+        ttk.Label(frame, textvariable=self.discovered_label, foreground="#555").grid(
             row=1, column=3, columnspan=6, sticky="w", padx=(12, 0), pady=(8, 0)
         )
 
@@ -157,23 +174,19 @@ class R48Application(tk.Tk):
             card.grid(row=0, column=column, sticky="nsew", padx=3)
             frame.columnconfigure(column, weight=1, uniform="cards")
 
-            ttk.Label(card, text=title, anchor="center",
-                      wraplength=140).pack(fill="x")
+            ttk.Label(card, text=title, anchor="center", wraplength=140).pack(fill="x")
 
             value = tk.StringVar(value="\u2014")
-            ttk.Label(card, textvariable=value,
-                      font=("Segoe UI", 16, "bold"), anchor="center").pack(
+            ttk.Label(card, textvariable=value, font=("Segoe UI", 16, "bold"), anchor="center").pack(
                 fill="x", pady=4
             )
             ttk.Label(card, text=unit, anchor="center").pack(fill="x")
 
             info = tk.StringVar(value="")
-            ttk.Label(card, textvariable=info, anchor="center",
-                      foreground="#555").pack(fill="x")
+            ttk.Label(card, textvariable=info, anchor="center", foreground="#555").pack(fill="x")
 
             age = tk.StringVar(value="")
-            ttk.Label(card, textvariable=age, anchor="center",
-                      foreground="#888").pack(fill="x")
+            ttk.Label(card, textvariable=age, anchor="center", foreground="#888").pack(fill="x")
 
             self.card_vars[key] = (value, info, age)
 
@@ -188,15 +201,11 @@ class R48Application(tk.Tk):
             text=f"Output voltage ({pc.VOLTAGE_MIN}\u2013{pc.VOLTAGE_MAX} V)",
         ).grid(row=0, column=0, sticky="w")
         self.voltage = tk.StringVar(value="54.0")
-        ttk.Entry(controls, textvariable=self.voltage, width=12).grid(
-            row=0, column=1, padx=6, pady=5
-        )
-        ttk.Button(controls, text="Set voltage (online)",
-                   command=lambda: self._set_voltage(False)).grid(
+        ttk.Entry(controls, textvariable=self.voltage, width=12).grid(row=0, column=1, padx=6, pady=5)
+        ttk.Button(controls, text="Set voltage (online)", command=lambda: self._set_voltage(False)).grid(
             row=0, column=2, padx=5
         )
-        ttk.Button(controls, text="Set voltage (permanent)",
-                   command=lambda: self._set_voltage(True)).grid(
+        ttk.Button(controls, text="Set voltage (permanent)", command=lambda: self._set_voltage(True)).grid(
             row=0, column=3, padx=5
         )
 
@@ -205,38 +214,28 @@ class R48Application(tk.Tk):
             text=f"Current limit ({pc.CURRENT_MIN}\u2013{pc.CURRENT_MAX} A)",
         ).grid(row=1, column=0, sticky="w")
         self.current = tk.StringVar(value="30.0")
-        ttk.Entry(controls, textvariable=self.current, width=12).grid(
-            row=1, column=1, padx=6, pady=5
-        )
-        ttk.Button(controls, text="Set current (online)",
-                   command=lambda: self._set_current(False)).grid(
+        ttk.Entry(controls, textvariable=self.current, width=12).grid(row=1, column=1, padx=6, pady=5)
+        ttk.Button(controls, text="Set current (online)", command=lambda: self._set_current(False)).grid(
             row=1, column=2, padx=5
         )
-        ttk.Button(controls, text="Set current (permanent)",
-                   command=lambda: self._set_current(True)).grid(
+        ttk.Button(controls, text="Set current (permanent)", command=lambda: self._set_current(True)).grid(
             row=1, column=3, padx=5
         )
 
         self.hold = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
-            controls,
-            text="Hold online setpoints (re-send every 10 s)",
-            variable=self.hold,
-        ).grid(row=2, column=0, columnspan=4, sticky="w")
+        ttk.Checkbutton(controls, text="Hold online setpoints (re-send every 10 s)", variable=self.hold).grid(
+            row=2, column=0, columnspan=4, sticky="w"
+        )
 
         self.auto_poll = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
-            controls,
-            text="Automatic telemetry polling (1 second)",
-            variable=self.auto_poll,
-        ).grid(row=3, column=0, columnspan=4, sticky="w")
+        ttk.Checkbutton(controls, text="Automatic telemetry polling (1 second)", variable=self.auto_poll).grid(
+            row=3, column=0, columnspan=4, sticky="w"
+        )
 
-        ttk.Button(controls, text="Request telemetry now",
-                   command=self._request_telemetry).grid(
+        ttk.Button(controls, text="Request telemetry now", command=self._request_telemetry).grid(
             row=4, column=0, columnspan=2, sticky="ew", pady=5
         )
-        ttk.Button(controls, text="Send raw CAN frame\u2026",
-                   command=self._open_raw_sender).grid(
+        ttk.Button(controls, text="Send raw CAN frame\u2026", command=self._open_raw_sender).grid(
             row=4, column=2, columnspan=2, sticky="ew", pady=5
         )
 
@@ -246,17 +245,13 @@ class R48Application(tk.Tk):
         self.fan_full = tk.BooleanVar(value=False)
         self.flash_led = tk.BooleanVar(value=False)
 
-        ttk.Button(fan_frame, text="Fan: Auto",
-                   command=lambda: self._set_fan(False)).pack(fill="x", pady=3)
-        ttk.Button(fan_frame, text="Fan: Full speed",
-                   command=lambda: self._set_fan(True)).pack(fill="x", pady=3)
+        ttk.Button(fan_frame, text="Fan: Auto", command=lambda: self._set_fan(False)).pack(fill="x", pady=3)
+        ttk.Button(fan_frame, text="Fan: Full speed", command=lambda: self._set_fan(True)).pack(fill="x", pady=3)
 
         self.fan_state = tk.StringVar(value="Fan mode: Auto")
         ttk.Label(fan_frame, textvariable=self.fan_state).pack(pady=(4, 2))
 
-        ttk.Checkbutton(fan_frame, text="Flash locate LED",
-                        variable=self.flash_led,
-                        command=self._send_control_now).pack(anchor="w", pady=3)
+        ttk.Checkbutton(fan_frame, text="Flash locate LED", variable=self.flash_led, command=self._send_control_now).pack(anchor="w", pady=3)
 
     def _build_tabs(self, root: ttk.Frame) -> None:
         notebook = ttk.Notebook(root)
@@ -264,10 +259,8 @@ class R48Application(tk.Tk):
 
         log_tab = ttk.Frame(notebook, padding=6)
         notebook.add(log_tab, text="Diagnostic log")
-        self.log = tk.Text(log_tab, height=10, wrap="none",
-                           state="disabled", font=("Consolas", 9))
-        scrollbar = ttk.Scrollbar(log_tab, orient="vertical",
-                                  command=self.log.yview)
+        self.log = tk.Text(log_tab, height=10, wrap="none", state="disabled", font=("Consolas", 9))
+        scrollbar = ttk.Scrollbar(log_tab, orient="vertical", command=self.log.yview)
         self.log.configure(yscrollcommand=scrollbar.set)
         self.log.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
@@ -277,15 +270,11 @@ class R48Application(tk.Tk):
 
         bar = ttk.Frame(props_tab)
         bar.pack(fill="x")
-        ttk.Button(bar, text="Scan properties 0x06\u20130x3F (read-only)",
-                   command=self._scan_properties).pack(side="left")
-        ttk.Button(bar, text="Clear", command=self._clear_unknown).pack(
-            side="left", padx=6
-        )
+        ttk.Button(bar, text="Scan properties 0x06\u20130x3F (read-only)", command=self._scan_properties).pack(side="left")
+        ttk.Button(bar, text="Clear", command=self._clear_unknown).pack(side="left", padx=6)
 
         columns = ("id", "src", "float", "raw", "age")
-        self.unknown_tree = ttk.Treeview(props_tab, columns=columns,
-                                         show="headings", height=8)
+        self.unknown_tree = ttk.Treeview(props_tab, columns=columns, show="headings", height=8)
         for col, title, width in (
             ("id", "Property", 80),
             ("src", "Source", 70),
@@ -297,9 +286,7 @@ class R48Application(tk.Tk):
             self.unknown_tree.column(col, width=width, anchor="w")
         self.unknown_tree.pack(fill="both", expand=True, pady=(6, 0))
 
-        ttk.Button(root, text="Clear log", command=self._clear_log).pack(
-            anchor="e", pady=(5, 0)
-        )
+        ttk.Button(root, text="Clear log", command=self._clear_log).pack(anchor="e", pady=(5, 0))
 
     # --------------------------------------------------------
     # Connection
@@ -325,8 +312,7 @@ class R48Application(tk.Tk):
             address = self._parse_address(self.target_address.get())
             self._target_address = address
 
-            transport = WaveshareSerialCAN(port=port, baud=baud,
-                                           bitrate=bitrate)
+            transport = WaveshareSerialCAN(port=port, baud=baud, bitrate=bitrate)
             self.controller = R48Controller(transport)
             self.controller.set_target_address(address)
             self.controller.connect()
@@ -336,9 +322,15 @@ class R48Application(tk.Tk):
             self._polling = True
 
             self._log(
-                f"Connected. Target PSU: {self._format_address(address)}. "
-                "Setpoints use big-endian floats."
+                f"Connected. Target PSU: {self._format_address(address)}. Setpoints use big-endian floats."
             )
+
+            # persist last-used port and target
+            try:
+                save_user_settings({"last_port": port, "last_target": self._target_address})
+            except Exception:
+                pass
+
         except Exception as exc:
             self._log(f"CONNECT ERROR: {exc}")
             self.controller = None
@@ -416,6 +408,12 @@ class R48Application(tk.Tk):
         self._log(f"Target PSU address set to {shown}")
         self.status.set(f"Target PSU: {shown}")
 
+        # persist last-used port and target
+        try:
+            save_user_settings({"last_port": self.port.get(), "last_target": self._target_address})
+        except Exception:
+            pass
+
     def _refresh_discovered_label(self) -> None:
         if not self._discovered:
             self.discovered_label.set("Discovered PSUs: (none yet)")
@@ -429,8 +427,7 @@ class R48Application(tk.Tk):
 
     def _require_controller(self) -> bool:
         if self.controller is None:
-            messagebox.showwarning("Not connected",
-                                   "Connect the adapter first")
+            messagebox.showwarning("Not connected", "Connect the adapter first")
             return False
         return True
 
@@ -457,10 +454,7 @@ class R48Application(tk.Tk):
 
         mode = "PERMANENTLY" if permanent else "online (temporary)"
         target = self._format_address(self._target_address)
-        if not messagebox.askyesno(
-            "Confirm voltage",
-            f"Set voltage to {value:.2f} V {mode} on PSU {target}?",
-        ):
+        if not messagebox.askyesno("Confirm voltage", f"Set voltage to {value:.2f} V {mode} on PSU {target}?"):
             return
 
         if self._perform(lambda: self.controller.set_voltage(value, permanent)):
@@ -475,10 +469,7 @@ class R48Application(tk.Tk):
 
         mode = "PERMANENTLY" if permanent else "online (temporary)"
         target = self._format_address(self._target_address)
-        if not messagebox.askyesno(
-            "Confirm current",
-            f"Set current limit to {value:.2f} A {mode} on PSU {target}?",
-        ):
+        if not messagebox.askyesno("Confirm current", f"Set current limit to {value:.2f} A {mode} on PSU {target}?"):
             return
 
         if self._perform(lambda: self.controller.set_current(value, permanent)):
@@ -497,22 +488,14 @@ class R48Application(tk.Tk):
     def _open_raw_sender(self) -> None:
         if not self._require_controller():
             return
-        RawFrameDialog(
-            parent=self,
-            send_callback=self.controller.send_raw,
-            log_callback=self._log,
-            default_id=R48Protocol.DEFAULT_TX_ID,
-        )
+        RawFrameDialog(parent=self, send_callback=self.controller.send_raw, log_callback=self._log, default_id=R48Protocol.DEFAULT_TX_ID)
 
     def _scan_properties(self) -> None:
         if not self._require_controller():
             return
         self._log("Scanning properties 0x06..0x3F (read-only)")
         for index, pid in enumerate(range(0x06, 0x40)):
-            self.after(
-                index * self.app_config.scan_spacing_ms,
-                lambda p=pid: self._scan_one(p),
-            )
+            self.after(index * self.app_config.scan_spacing_ms, lambda p=pid: self._scan_one(p))
 
     def _scan_one(self, pid: int) -> None:
         if self.controller is None or self._closing:
@@ -531,9 +514,7 @@ class R48Application(tk.Tk):
             return
 
         if self.controller is not None:
-            for kind, payload in self.controller.drain_events(
-                self.app_config.max_events_per_cycle
-            ):
+            for kind, payload in self.controller.drain_events(self.app_config.max_events_per_cycle):
                 if kind == "log":
                     self._log(payload)
                 elif kind == "status":
@@ -669,15 +650,11 @@ class R48Application(tk.Tk):
         if self._polling and self.controller is not None and self.hold.get():
             try:
                 if self._hold_voltage is not None:
-                    self.controller.set_voltage(self._hold_voltage,
-                                                permanent=False)
+                    self.controller.set_voltage(self._hold_voltage, permanent=False)
                 if self._hold_current is not None:
-                    self.controller.set_current(self._hold_current,
-                                                permanent=False)
+                    self.controller.set_current(self._hold_current, permanent=False)
                 if self.fan_full.get() or self.flash_led.get():
-                    self.controller.send_control(
-                        self.fan_full.get(), self.flash_led.get()
-                    )
+                    self.controller.send_control(self.fan_full.get(), self.flash_led.get())
             except Exception as exc:
                 self._log(f"KEEP-ALIVE ERROR: {exc}")
 
@@ -697,7 +674,8 @@ class R48Application(tk.Tk):
             self.log.see("end")
             lines = int(self.log.index("end-1c").split(".")[0])
             if lines > self.app_config.max_log_lines:
-                self.log.delete("1.0", f"{lines - 900}.0")
+                keep = self.app_config.max_log_lines
+                self.log.delete("1.0", f"{lines - keep}.0")
             self.log.configure(state="disabled")
         except tk.TclError:
             pass
@@ -710,6 +688,13 @@ class R48Application(tk.Tk):
     def _close(self) -> None:
         self._closing = True
         self._polling = False
+
+        # persist current settings
+        try:
+            save_user_settings({"last_port": self.port.get(), "last_target": self._target_address})
+        except Exception:
+            pass
+
         controller, self.controller = self.controller, None
         if controller is not None:
             try:
