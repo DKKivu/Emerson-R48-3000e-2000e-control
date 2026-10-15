@@ -9,9 +9,9 @@ Protocol references:
 ## Features
 - Live telemetry: voltage, current, power, current limit, temperature, input voltage.
 - Set voltage / current setpoints:
-  - Online (temporary): takes effect immediately but not written to non-volatile memory.
+  - Online (temporary): takes effect immediately but is not written to non-volatile memory.
   - Permanent (offline / written to device memory): stores the value in the rectifier memory.
-  - Important: when configuring a permanent/offline value, set the online value first, verify the result, and then write the permanent value. The permanent value is written to memory.
+  - Important: when configuring a permanent/offline value, set the online value first, verify the result, and then write the permanent value. The permanent value is written to device memory.
 - Online setpoints are re-sent every 10 s while Hold is ticked.
 - Fan control: discrete modes only — Auto or Full speed.
 - Locate LED flash.
@@ -53,11 +53,11 @@ dist/R48Controller.exe
 ```
 
 ## Configuration defaults
-- Serial port: COM3
-- Serial baud: 2,000,000
+- Default serial port: configured in `r48/config.yaml` (leave empty to auto-select the first detected adapter)
+- Serial baud: 2,000,000 (default)
 - CAN bitrate: 125,000
 
-These defaults are defined in `r48/config.py` in `AppConfig`.
+These defaults are defined in `r48/config.yaml` and loaded by `r48/config.py`. Edit `r48/config.yaml` to change defaults.
 
 ## Programmatic usage
 
@@ -100,8 +100,26 @@ ctrl.disconnect()
 - The protocol supports multiple PSU addressing by substituting the target address into the CAN ID.
 - Use the exact CAN bitrate and adapter port that match the hardware on the bench.
 
+## Troubleshooting
+
+- Adapter not detected:
+  - Click the "Refresh" button next to the COM port selector in the UI.
+  - On Linux/macOS common device names are `/dev/ttyUSB0`, `/dev/ttyACM0`, `/dev/tty.usbserial-*`, etc.
+  - Ensure the Waveshare adapter is connected and OS drivers for the USB serial bridge are installed.
+
+- Wrong CAN bitrate / no data:
+  - Ensure the CAN bitrate in the UI matches the adapter and the CAN bus (common values: 125000, 250000, 500000). Mismatched bitrates prevent frame decoding.
+
+- Missing PySerial or PyYAML:
+  - Install dependencies: `python -m pip install -r requirements.txt`
+  - If pyserial is missing the app will raise a `TransportError` when trying to connect. PyYAML is required for config persistence.
+
+- Permanent writes seem to have no effect:
+  - Set the online value first and verify, then use the "permanent" option to write to device memory.
+  - Test on a single unit before applying permanent writes widely — some rectifier firmware requires specific sequences.
+
 ## Project structure
-```text
+```
 README.md
 requirements.txt
 run.py
@@ -109,6 +127,8 @@ build_exe.py
 r48/
   __init__.py
   config.py
+  config.yaml
+  settings.py
   controller.py
   exceptions.py
   models.py
@@ -126,29 +146,9 @@ r48/
 - `r48/protocol.py` — CAN protocol encoding/decoding for the R48 and the Waveshare adapter framing.
 - `r48/transport.py` — serial transport layer that communicates with the USB-CAN adapter and emits events for the UI.
 - `r48/models.py` — shared immutable data classes (`CANFrame`, `TelemetryValue`).
-- `r48/config.py` — default application settings.
+- `r48/config.py` & `r48/config.yaml` — app settings and defaults.
+- `r48/settings.py` — persistent user settings (last used port/target).
 - `r48/ui/main_window.py` and `r48/ui/dialogs.py` — Tkinter GUI implementation.
-
-## Safety and usage tips
-- Permanent writes change saved rectifier memory. Confirm values before writing permanently.
-- Fan control is binary in the protocol; use Auto or Full only.
-- If communication fails, verify serial port, baud rate, and CAN bitrate.
-
-## Files of interest
-- `r48/config.py` — app configuration
-- `r48/protocol.py` — message format and codec logic
-- `r48/transport.py` — serial adapter transport and event queue
-- `r48/controller.py` — controller facade / API surface
-- `r48/models.py` — canonical data types
-- `r48/ui/main_window.py` — main GUI and telemetry view
-- `r48/ui/dialogs.py` — supporting dialogs
-- `run.py` — app entry point
-- `build_exe.py` — Windows EXE packaging helper
-
-## Notes for developers
-- The controller depends on a transport abstraction, so the logic can be tested without hardware.
-- The transport layer emits event messages that the GUI drains on the Tk main loop.
-- R48 protocol message building and decoding are kept in one place for easier debugging and maintenance.
 
 ## License
 This project is open-sourced under the MIT License. See `LICENSE` for the full text.
