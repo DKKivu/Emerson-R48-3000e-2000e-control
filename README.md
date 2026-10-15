@@ -158,8 +158,3 @@ This implementation was developed with reference to the following public project
 
 - PurpleAlien/R48_Rectifier — https://github.com/PurpleAlien/R48_Rectifier
 - anikrooz/Emerson-Vertiv-R48 — https://github.com/anikrooz/Emerson-Vertiv-R48
-
-## Try asking
-- "How do I target multiple PSUs with different addresses?"
-- "Where is the fan control bit defined in the protocol?"
-- "Can you show the flow from the GUI setpoint button to the raw CAN frame sent to the rectifier?"
