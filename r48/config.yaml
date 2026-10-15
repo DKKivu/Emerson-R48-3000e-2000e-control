@@ -1,0 +1,20 @@
+# App defaults. Edit as needed; values are loaded by r48.config.
+title: "Emerson / Vertiv R48 Controller"
+width: 1120
+height: 940
+
+# Default serial port - leave empty to prefer auto/first-detected port
+serial_port: ""
+
+# USB serial port baud and CAN bitrate
+serial_baud: 2000000
+can_bitrate: 125000
+
+poll_interval_ms: 1000
+keepalive_ms: 10000
+age_refresh_ms: 500
+stale_after_s: 5.0
+gui_interval_ms: 50
+max_events_per_cycle: 200
+max_log_lines: 1200
+scan_spacing_ms: 90
